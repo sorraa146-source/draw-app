@@ -1,18 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Advanced Online Draw App</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Online Collaborative Drawing App</title>
 <style>
 :root {
-  --bg:#121212;--panel:#1e1e1e;--panel2:#262626;--accent:#4da3ff;--text:#f2f2f2;--muted:#9a9a9a;--border:#333;
+  --bg: #121212;
+  --panel: #1e1e1e;
+  --panel2: #262626;
+  --accent: #4da3ff;
+  --text: #f2f2f2;
+  --muted: #9a9a9a;
+  --border: #333;
 }
 *{box-sizing:border-box;font-family:system-ui,Segoe UI,sans-serif}
-body{margin:0;background:var(--bg);color:var(--text);display:grid;grid-template-columns:260px 1fr;grid-template-rows:auto 1fr; height:100vh}
+body{margin:0;background:var(--bg);color:var(--text);display:grid;grid-template-columns:260px 1fr;grid-template-rows:auto 1fr;height:100vh}
 header{grid-column:1/3;padding:12px 16px;background:#1a1a1a;border-bottom:1px solid var(--border);font-weight:600}
 aside{background:var(--panel);border-right:1px solid var(--border);padding:12px;overflow:auto}
-main{display:flex;align-items:center;justify-content:center;background:#0d0d0d}
+main{display:flex;align-items:center;justify-content:center;background:#0d0d0d;position:relative}
 canvas{background:#fff;border-radius:4px;box-shadow:0 10px 40px rgba(0,0,0,.7)}
 h3{font-size:12px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase}
 button{width:100%;padding:8px;margin-bottom:6px;border-radius:6px;border:1px solid var(--border);background:#2b2b2b;color:var(--text);cursor:pointer}
@@ -22,9 +28,14 @@ input,select{width:100%;margin-bottom:6px}
 .row{display:flex;flex-wrap:wrap;gap:6px}
 .swatch{width:22px;height:22px;border-radius:4px;border:1px solid #000;cursor:pointer}
 .swatch.active{outline:2px solid white}
-#onlinePanel{display:none;background:var(--panel2);padding:8px;border-radius:6px}
-.server{padding:6px;border:1px solid var(--border);margin-bottom:6px;border-radius:4px;cursor:pointer}
-.server:hover{background:#333}
+#onlinePanel{display:none;background:var(--panel2);padding:8px;border-radius:6px;margin-top:6px}
+.tab-buttons{display:flex;gap:6px;margin-bottom:6px}
+.tab-buttons button{flex:1}
+.tab-content{display:none;margin-top:6px}
+.tab-content.active{display:block}
+#errorMsg{color:red;font-size:12px;margin:6px 0}
+#nicknameOverlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;z-index:10}
+#nicknameOverlay input{margin:8px 0;padding:6px;width:200px;border-radius:4px;border:none}
 </style>
 </head>
 <body>
@@ -42,21 +53,36 @@ input,select{width:100%;margin-bottom:6px}
 <button id="undo">Undo</button>
 <button id="redo">Redo</button>
 <h3>Online</h3>
-<button id="onlineBtn">Online Mode</button>
+<div class="tab-buttons">
+  <button id="publicTabBtn" class="active">Public Servers</button>
+  <button id="createTabBtn">Create Server</button>
+</div>
 <div id="onlinePanel">
-<button id="refreshServers">Refresh Servers</button>
-<div id="serverList"></div>
-<h3>Create Server</h3>
-<input id="serverName" placeholder="Server name">
-<input id="serverCode" placeholder="Join code (optional)">
-<select id="serverPublic"><option value="true">Public</option><option value="false">Private</option></select>
-<input id="serverMax" type="number" min="1" max="32" value="8">
-<button id="createServer">Create Server</button>
+  <div id="publicServers" class="tab-content active">
+    <button id="refreshServers">Refresh Servers</button>
+    <div id="serverList"></div>
+  </div>
+  <div id="createServerTab" class="tab-content">
+    <input id="serverName" placeholder="Server Name">
+    <input id="serverCode" placeholder="Join Code (optional)">
+    <select id="serverPublic"><option value="true">Public</option><option value="false">Private</option></select>
+    <input id="serverMax" type="number" min="1" max="32" value="8">
+    <button id="createServerBtn">Create Server</button>
+    <div id="errorMsg"></div>
+  </div>
 </div>
 </aside>
-<main><canvas id="canvas" width="1200" height="800"></canvas></main>
+<main>
+<canvas id="canvas" width="1200" height="800"></canvas>
+<div id="nicknameOverlay">
+<h2>Enter your nickname</h2>
+<input id="nicknameInput" placeholder="Nickname">
+<button id="nicknameSubmit">Enter</button>
+<div id="nicknameError" style="color:red;font-size:12px"></div>
+</div>
+</main>
 <script>
-
+// ===================== DRAWING SETUP =====================
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
 let drawing=false,tool='pen',color='#000';
@@ -68,25 +94,71 @@ function undo(){if(!history.length)return;redoStack.push(canvas.toDataURL());loa
 function redo(){if(!redoStack.length)return;history.push(canvas.toDataURL());load(redoStack.pop())}
 function load(src){const i=new Image();i.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(i,0,0)};i.src=src}
 document.getElementById('undo').onclick=undo;document.getElementById('redo').onclick=redo;
-canvas.onmousedown=e=>{drawing=true;save();ctx.beginPath();const r=canvas.getBoundingClientRect();ctx.moveTo(e.clientX-r.left,e.clientY-r.top)};
+canvas.onmousedown=e=>{drawing=true;save();ctx.beginPath();const r=canvas.getBoundingClientRect();ctx.moveTo(e.clientX-r.left,e.clientY-r.top);if(socket&&socket.readyState===1)sendDraw(e.clientX-r.left,e.clientY-r.top)};
 canvas.onmouseup=()=>drawing=false;canvas.onmouseleave=()=>drawing=false;
 canvas.onmousemove=e=>{if(!drawing)return;const r=canvas.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;ctx.lineWidth=size.value;ctx.globalAlpha=opacity.value/100;ctx.lineCap='round';if(tool==='eraser'){ctx.globalCompositeOperation='destination-out'}else{ctx.globalCompositeOperation='source-over';ctx.strokeStyle=color}ctx.lineTo(x,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,y);if(socket&&socket.readyState===1)sendDraw(x,y)};
 document.getElementById('pen').onclick=()=>tool='pen';document.getElementById('eraser').onclick=()=>tool='eraser';
 const palette=['#000','#fff','#f00','#0f0','#00f','#ff0','#0ff','#f0f','#800','#080','#008','#fa0','#0af','#a0f','#f55','#5f5','#55f'];
 const colors=document.getElementById('colors');palette.forEach(c=>{const d=document.createElement('div');d.className='swatch';d.style.background=c;d.onclick=()=>{color=c;document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('active'));d.classList.add('active')};colors.appendChild(d)});
 
-let socket=null;const onlineBtn=document.getElementById('onlineBtn');const panel=document.getElementById('onlinePanel');
-onlineBtn.onclick=()=>panel.style.display=panel.style.display==='none'?'block':'none';
-function connect(serverId,code){socket=new WebSocket('wss://YOUR_SERVER_URL');socket.onopen=()=>{socket.send(JSON.stringify({type:'join',serverId,code}))};socket.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='draw'){remoteDraw(msg)}}}
-function sendDraw(x,y){socket.send(JSON.stringify({type:'draw',x,y,color,size:size.value,opacity:opacity.value,tool}))}
+// ===================== NICKNAME =====================
+let nickname='';
+const nicknameOverlay=document.getElementById('nicknameOverlay');
+const nicknameInput=document.getElementById('nicknameInput');
+const nicknameSubmit=document.getElementById('nicknameSubmit');
+const nicknameError=document.getElementById('nicknameError');
+nicknameSubmit.onclick=()=>{
+  const name=nicknameInput.value.trim();
+  if(name.length<1){nicknameError.textContent='Nickname required';return}
+  nickname=name;
+  nicknameOverlay.style.display='none';
+  initOnline();
+};
+
+// ===================== TABS =====================
+const publicTabBtn=document.getElementById('publicTabBtn');
+const createTabBtn=document.getElementById('createTabBtn');
+const publicServers=document.getElementById('publicServers');
+const createServerTab=document.getElementById('createServerTab');
+publicTabBtn.onclick=()=>{publicTabBtn.classList.add('active');createTabBtn.classList.remove('active');publicServers.classList.add('active');createServerTab.classList.remove('active')};
+createTabBtn.onclick=()=>{createTabBtn.classList.add('active');publicTabBtn.classList.remove('active');createServerTab.classList.add('active');publicServers.classList.remove('active')};
+
+// ===================== ONLINE =====================
+let socket=null;
+function initOnline(){
+  socket=new WebSocket('wss://YOUR_SERVER_URL');
+  socket.onopen=()=>console.log('Connected to server');
+  socket.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='draw'){remoteDraw(msg)}};
+}
+function sendDraw(x,y){
+  if(!nickname)return;
+  socket.send(JSON.stringify({type:'draw',x,y,color,size:size.value,opacity:opacity.value,tool,nickname}))
+}
 function remoteDraw(d){ctx.lineWidth=d.size;ctx.globalAlpha=d.opacity/100;ctx.lineCap='round';if(d.tool==='eraser'){ctx.globalCompositeOperation='destination-out'}else{ctx.globalCompositeOperation='source-over';ctx.strokeStyle=d.color}ctx.lineTo(d.x,d.y);ctx.stroke();ctx.beginPath();ctx.moveTo(d.x,d.y)}
 
+// ===================== SERVER LIST =====================
 const serverList=document.getElementById('serverList');
 document.getElementById('refreshServers').onclick=()=>{
-fetch('/servers').then(r=>r.json()).then(list=>{serverList.innerHTML='';list.forEach(s=>{const d=document.createElement('div');d.className='server';d.textContent=s.name+' ('+s.players+'/'+s.max+')';d.onclick=()=>connect(s.id,prompt('Enter code if required'));serverList.appendChild(d)})})};
-document.getElementById('createServer').onclick=()=>{
-fetch('/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:serverName.value,code:serverCode.value,public:serverPublic.value==='true',max:+serverMax.value})})};
+  if(!socket)return;
+  socket.send(JSON.stringify({type:'listPublic'}));
+};
+// Create server
+const createServerBtn=document.getElementById('createServerBtn');
+const serverName=document.getElementById('serverName');
+const serverCode=document.getElementById('serverCode');
+const serverPublic=document.getElementById('serverPublic');
+const serverMax=document.getElementById('serverMax');
+const errorMsg=document.getElementById('errorMsg');
+createServerBtn.onclick=()=>{
+  errorMsg.textContent='';
+  const name=serverName.value.trim();
+  if(!name){errorMsg.textContent='Server name required';return}
+  const max=Number(serverMax.value);
+  if(max<1||max>32){errorMsg.textContent='Max players 1-32';return}
+  if(!socket){errorMsg.textContent='Not connected to server';return}
+  socket.send(JSON.stringify({type:'createServer',name,code:serverCode.value,public:serverPublic.value==='true',max}));
+};
+
 </script>
 </body>
-
 </html>
