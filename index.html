@@ -56,7 +56,7 @@ input,select{width:100%;margin-bottom:6px}
 </aside>
 <main><canvas id="canvas" width="1200" height="800"></canvas></main>
 <script>
-// ================= BASIC DRAW =================
+
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
 let drawing=false,tool='pen',color='#000';
@@ -74,13 +74,13 @@ canvas.onmousemove=e=>{if(!drawing)return;const r=canvas.getBoundingClientRect()
 document.getElementById('pen').onclick=()=>tool='pen';document.getElementById('eraser').onclick=()=>tool='eraser';
 const palette=['#000','#fff','#f00','#0f0','#00f','#ff0','#0ff','#f0f','#800','#080','#008','#fa0','#0af','#a0f','#f55','#5f5','#55f'];
 const colors=document.getElementById('colors');palette.forEach(c=>{const d=document.createElement('div');d.className='swatch';d.style.background=c;d.onclick=()=>{color=c;document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('active'));d.classList.add('active')};colors.appendChild(d)});
-// ================= ONLINE MODE =================
+
 let socket=null;const onlineBtn=document.getElementById('onlineBtn');const panel=document.getElementById('onlinePanel');
 onlineBtn.onclick=()=>panel.style.display=panel.style.display==='none'?'block':'none';
 function connect(serverId,code){socket=new WebSocket('wss://YOUR_SERVER_URL');socket.onopen=()=>{socket.send(JSON.stringify({type:'join',serverId,code}))};socket.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='draw'){remoteDraw(msg)}}}
 function sendDraw(x,y){socket.send(JSON.stringify({type:'draw',x,y,color,size:size.value,opacity:opacity.value,tool}))}
 function remoteDraw(d){ctx.lineWidth=d.size;ctx.globalAlpha=d.opacity/100;ctx.lineCap='round';if(d.tool==='eraser'){ctx.globalCompositeOperation='destination-out'}else{ctx.globalCompositeOperation='source-over';ctx.strokeStyle=d.color}ctx.lineTo(d.x,d.y);ctx.stroke();ctx.beginPath();ctx.moveTo(d.x,d.y)}
-// ================= SERVER LIST UI =================
+
 const serverList=document.getElementById('serverList');
 document.getElementById('refreshServers').onclick=()=>{
 fetch('/servers').then(r=>r.json()).then(list=>{serverList.innerHTML='';list.forEach(s=>{const d=document.createElement('div');d.className='server';d.textContent=s.name+' ('+s.players+'/'+s.max+')';d.onclick=()=>connect(s.id,prompt('Enter code if required'));serverList.appendChild(d)})})};
@@ -88,4 +88,5 @@ document.getElementById('createServer').onclick=()=>{
 fetch('/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:serverName.value,code:serverCode.value,public:serverPublic.value==='true',max:+serverMax.value})})};
 </script>
 </body>
+
 </html>
